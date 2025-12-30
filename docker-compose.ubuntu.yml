@@ -42,7 +42,7 @@ services:
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
 
       # 🔹 REQUIRED for subpath behind Nginx
-      - N8N_PATH=/n8n
+      - N8N_PATH=/n8n/
       - N8N_HOST=161.97.148.24
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://161.97.148.24/n8n/
