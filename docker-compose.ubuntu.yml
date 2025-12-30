@@ -26,19 +26,36 @@ services:
     container_name: n8n
     ports:
       - "127.0.0.1:5678:5678"
+
     environment:
+      # timezone & runtime
       - TZ=Asia/Ho_Chi_Minh
       - NODE_ENV=production
+
+      # auth
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_USER}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASS}
+
+      # security / permissions
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+
+      # 🔹 REQUIRED for subpath behind Nginx
+      - N8N_PATH=/n8n
+      - N8N_HOST=161.97.148.24
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://161.97.148.24/n8n/
+      - N8N_EDITOR_BASE_URL=http://161.97.148.24/n8n/
+
+      # used by workflows
       - SCRAPER_TOKEN=${SCRAPE_TOKEN}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TG_FORUM_CHAT_ID=${TG_FORUM_CHAT_ID}
       - OLLAMA_URL=http://ollama:11434/api/generate
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+
     volumes:
       - ./n8n/data:/home/node/.n8n
+
     restart: unless-stopped
