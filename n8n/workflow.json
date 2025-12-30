@@ -1,0 +1,635 @@
+{
+    "name": "Weibo → (Clean) → Ollama CN→VI (Fallback CN-only) → Sheets (API) → Telegram Topics",
+    "nodes": [
+        {
+            "parameters": {
+                "triggerTimes": {
+                    "item": [
+                        {
+                            "mode": "everyX",
+                            "value": 10,
+                            "unit": "minutes"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron",
+            "type": "n8n-nodes-base.cron",
+            "typeVersion": 1,
+            "position": [
+                240,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "={{'http://weibo:3001/scrape?token=' + ($env.SCRAPER_TOKEN || 'CHANGE_ME')}}",
+                "responseFormat": "json",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Call Crawler",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                480,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForAllItems",
+                "jsCode": "const inItems = $input.all().map(i => i.json);\n\n// Support BOTH shapes:\n// 1) One item with payload.items = [accounts...]\n// 2) Multiple items where each item IS an account\nlet accounts = [];\nfor (const it of inItems) {\n  if (it && Array.isArray(it.items)) accounts.push(...it.items);\n  else if (it) accounts.push(it);\n}\n\nconst out = [];\n\nfor (const acc of accounts) {\n  const account_key = acc.account_key || 'unknown';\n  const uid = acc.uid || '';\n  const fetched_at = acc.fetched_at || acc.generated_at || new Date().toISOString();\n\n  const posts = Array.isArray(acc.posts) ? acc.posts : [];\n  for (const p of posts) {\n    const post_id = (p.post_id || '').toString();\n    const created_at = p.created_at || fetched_at;\n    const permalink = p.permalink || p.scheme_url || '';\n    const text_cn = ((p.text_cn || p.text || '') + '').trim();\n\n    if (!text_cn) continue;\n\n    const fingerprint = post_id\n      ? account_key + '|' + post_id\n      : account_key + '|' + created_at + '|' + permalink;\n\n    out.push({\n      json: {\n        account_key,\n        uid,\n        fetched_at,\n        post_id,\n        created_at,\n        permalink,\n        text_cn,\n        fingerprint,\n        raw_json: JSON.stringify(p.raw || p)\n      }\n    });\n  }\n}\n\nreturn out;"
+            },
+            "name": "Flatten Posts",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                720,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "function normalizeWeiboText(s) {\n  s = (s || '').toString();\n  s = s.replace(/\\r\\n/g, '\\n');\n  s = s.replace(/[ \\t]+/g, ' ');\n  s = s.replace(/\\n{3,}/g, '\\n\\n');\n  return s.trim();\n}\n\nfunction escapeNewlinesForStorage(s) {\n  // For Sheets storage: convert real newlines into literal \\\\n\n  return (s || '').toString()\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n/g, '\\\\n');\n}\n\nconst base = ($json && typeof $json === 'object' && !Array.isArray($json))\n  ? $json\n  : { text_cn: String($json ?? '') };\n\nconst cleaned_cn_raw = normalizeWeiboText(base.text_cn);\nconst cleaned_cn_escaped = escapeNewlinesForStorage(cleaned_cn_raw);\n\nreturn {\n  ...base,\n  cleaned_cn_raw,\n  cleaned_cn_escaped\n};"
+            },
+            "name": "Clean Weibo Text",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1200,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://ollama:11434/api/generate",
+                "responseFormat": "json",
+                "jsonParameters": true,
+                "sendBody": true,
+                "specifyBody": "keypair",
+                "options": {
+                    "timeout": 300000,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    }
+                },
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "model",
+                            "value": "qwen2.5:7b"
+                        },
+                        {
+                            "name": "stream",
+                            "value": "={{false}}"
+                        },
+                        {
+                            "name": "options",
+                            "value": "={{ { temperature: 0.2, top_p: 0.9, num_predict: 700 } }}"
+                        },
+                        {
+                            "name": "system",
+                            "value": "You are a professional Chinese→Vietnamese translator specialized in Weibo social posts. Preserve meaning exactly. Do not add or remove facts. Keep @mentions, #hashtags, emojis, and URLs unchanged. Keep proper nouns in Chinese if uncertain. Preserve line breaks. Output Vietnamese only."
+                        },
+                        {
+                            "name": "prompt",
+                            "value": "={{ 'Translate this Weibo post to Vietnamese. Translation only.\\n\\nMetadata:\\n- account: ' + ($json.account_key || '') + '\\n- time: ' + ($json.created_at || '') + '\\n- link: ' + ($json.permalink || '') + '\\n\\nChinese:\\n' + ($json.cleaned_cn_raw || '') }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Translate CN→VI (Ollama)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1440,
+                220
+            ],
+            "continueOnFail": true
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "function escapeNewlinesForStorage(s) {\n  return (s || '').toString()\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n/g, '\\\\n');\n}\n\nconst base = $items('Clean Weibo Text')[$itemIndex].json;\nconst vi_raw = ((($json?.response || '') + '')).trim();\nconst vi_escaped = escapeNewlinesForStorage(vi_raw);\n\nreturn {\n  ...base,\n  translation_vi_raw: vi_raw,\n  translation_vi_escaped: vi_escaped,\n  ollama_translate_ok: !!vi_raw\n};"
+            },
+            "name": "Attach Translation",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1680,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://ollama:11434/api/generate",
+                "responseFormat": "json",
+                "jsonParameters": true,
+                "sendBody": true,
+                "specifyBody": "keypair",
+                "options": {
+                    "timeout": 300000,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    }
+                },
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "model",
+                            "value": "qwen2.5:7b"
+                        },
+                        {
+                            "name": "stream",
+                            "value": "={{false}}"
+                        },
+                        {
+                            "name": "options",
+                            "value": "={{ { temperature: 0.3, top_p: 0.9, num_predict: 220 } }}"
+                        },
+                        {
+                            "name": "system",
+                            "value": "You rewrite Vietnamese social posts into a clear, neutral, short news-style Vietnamese blurb. Do not add any facts. Preserve names, numbers, and URLs. Output Vietnamese only."
+                        },
+                        {
+                            "name": "prompt",
+                            "value": "={{ 'Rewrite the Vietnamese translation into 1–2 short paragraphs. Keep it factual.\\n\\nVietnamese:\\n' + ($items(\"Attach Translation\")[$itemIndex].json.translation_vi_raw || '') }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Rewrite VI (Optional)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1920,
+                220
+            ],
+            "continueOnFail": true
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "function escapeNewlinesForStorage(s) {\n  return (s || '').toString()\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n/g, '\\\\n');\n}\n\nconst base = $items('Attach Translation')[$itemIndex].json;\nconst rewritten_raw = ((($json?.response || '') + '')).trim();\nconst rewritten_escaped = escapeNewlinesForStorage(rewritten_raw);\n\nreturn {\n  ...base,\n  vi_rewrite_raw: rewritten_raw,\n  vi_rewrite_escaped: rewritten_escaped,\n  ollama_rewrite_ok: !!rewritten_raw\n};"
+            },
+            "name": "Attach Rewrite",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2160,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const j = $json;\n\nconst vi_final_raw = (j.vi_rewrite_raw || j.translation_vi_raw || '').trim();\nconst vi_final_escaped = (j.vi_rewrite_escaped || j.translation_vi_escaped || '').trim();\n\nreturn {\n  ...j,\n  vi_final_raw,\n  vi_final_escaped,\n  vi_present: vi_final_raw.length > 0\n};"
+            },
+            "name": "Decide VI Final",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2400,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac/values/' + encodeURIComponent('Posts!A1') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS' }}",
+                "responseFormat": "json",
+                "jsonParameters": true,
+                "sendBody": true,
+                "specifyBody": "keypair",
+                "options": {
+                    "timeout": 300000
+                },
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "values",
+                            "value": "={{ [[\n  $json.created_at || '',\n  $json.account_key || '',\n  $json.post_id || '',\n  $json.permalink || '',\n  $json.cleaned_cn_escaped || '',\n  ($json.vi_final_escaped || $json.translation_vi_escaped || ''),\n  $json.fingerprint || '',\n  $json.fetched_at || ''\n]] }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Append to Sheets (Service Account)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                2580,
+                220
+            ],
+            "notesInFlow": true,
+            "notes": "Authentication: Predefined Credential Type → Google Service Account API. Scopes must include spreadsheets."
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const base = $items('Decide VI Final')[$itemIndex].json;\n\n// Keep Sheets response, but restore the original post data\nreturn {\n  ...base,\n  sheets_append_response: $json\n};"
+            },
+            "name": "Reattach Data After Sheets",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2700,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{$json.vi_present}}",
+                            "operation": "isTrue"
+                        }
+                    ]
+                }
+            },
+            "name": "Has VI?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                2840,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const j = $json;\n\n// Telegram multiline WITHOUT real \\n: use U+2028\nconst LS = '\\u2028';\n\n// MarkdownV2 escape (official special chars)\nfunction escMdV2(s) {\n  s = (s ?? '').toString();\n  return s.replace(/([_\\*\\[\\]\\(\\)~`>#+\\-=|{}\\.!\\\\])/g, '\\\\$1');\n}\n\nfunction toTelegramLines(s) {\n  return (s ?? '').toString()\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .split('\\n')\n    .join(LS);\n}\n\nfunction clip(s, maxLen) {\n  s = (s ?? '').toString();\n  if (s.length <= maxLen) return s;\n  return s.slice(0, Math.max(0, maxLen - 1)) + '…';\n}\n\nconst ACCOUNT_STYLE = {\n  f2lam: { title: 'F2 Lam', emoji: '🟣' },\n  f2ma: { title: 'F2 Ma', emoji: '🔵' }\n};\n\nconst style = ACCOUNT_STYLE[j.account_key] || { title: j.account_key || 'unknown', emoji: '🧵' };\n\nconst cn = clip(j.cleaned_cn_raw || j.text_cn || '', 1800);\nconst vi = clip(j.vi_final_raw || j.translation_vi_raw || '', 1800);\n\nconst header = '*' + escMdV2(style.emoji) + '\\u00A0' + escMdV2(style.title) + '*';\nconst cnBlock = '*🇨🇳\\u00A0Original\\u00A0CN:*' + LS + escMdV2(toTelegramLines(cn));\nconst viBlock = '*🇻🇳\\u00A0Vietnamese:*' + LS + escMdV2(toTelegramLines(vi));\nconst linkLine = '*🔗\\u00A0Link:*' + LS + escMdV2(toTelegramLines(j.permalink || ''));\n\nconst msg = [header, cnBlock, viBlock, linkLine].join(LS + LS);\n\nreturn { ...j, telegram_message: msg };"
+            },
+            "name": "Build Telegram (CN+VI)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3040,
+                160
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const j = $json;\n\nconst LS = \"\\u2028\";\n\nfunction escMdV2(s) {\n  s = (s ?? \"\").toString();\n  // MarkdownV2 special chars: _ * [ ] ( ) ~ ` > # + - = | { } . ! and backslash\n  return s.replace(/([_\\*\\$begin:math:display$\\$end:math:display$\\$begin:math:text$\\$end:math:text$~`>#+\\-=|{}\\.!\\\\])/g, \"\\\\$1\");\n}\n\nfunction toTelegramLines(s) {\n  return (s ?? \"\").toString()\n    .replace(/\\r\\n/g, \"\\n\")\n    .replace(/\\r/g, \"\\n\")\n    .split(\"\\n\")\n    .join(LS);\n}\n\nfunction clip(s, maxLen) {\n  s = (s ?? \"\").toString();\n  if (s.length <= maxLen) return s;\n  return s.slice(0, Math.max(0, maxLen - 1)) + \"…\";\n}\n\nconst ACCOUNT_STYLE = {\n  f2lam: { title: \"F2 Lam\", emoji: \"🟣\" },\n  f2ma: { title: \"F2 Ma\", emoji: \"🔵\" }\n};\n\nconst style = ACCOUNT_STYLE[j.account_key] || { title: j.account_key || \"unknown\", emoji: \"🧵\" };\n\nconst cn = clip(j.cleaned_cn_raw || j.text_cn || \"\", 2600);\n\nconst header = \"*\" + escMdV2(style.emoji) + \"\\u00A0\" + escMdV2(style.title) + \"*\";\nconst cnBlock = \"*🇨🇳\\u00A0Original\\u00A0CN:*\" + LS + escMdV2(toTelegramLines(cn));\nconst linkLine = \"*🔗\\u00A0Link:*\" + LS + escMdV2(toTelegramLines(j.permalink || \"\"));\n\nconst msg = [header, cnBlock, linkLine].join(LS + LS);\n\nreturn { ...j, telegram_message: msg };"
+            },
+            "name": "Build Telegram (CN-only)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3040,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const FORUM_CHAT_ID = Number($env.TG_FORUM_CHAT_ID);\n\nconst THREAD_MAP = {\n  f2lam: 2,\n  f2ma: 3\n};\n\nconst thread_id = THREAD_MAP[$json.account_key] || null;\n\nreturn { ...$json, forum_chat_id: FORUM_CHAT_ID, thread_id };"
+            },
+            "name": "Map Topic",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3280,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const j = $json;\n\nconst MAX = 3900; // keep margin under 4096\nconst LS = '\\u2028';\n\nconst text = (j.telegram_message || '').toString();\nconst blocks = text.split(LS + LS);\n\nconst parts = [];\nlet cur = '';\n\nfunction pushCur() {\n  if (cur) parts.push(cur);\n  cur = '';\n}\n\nfor (const b of blocks) {\n  const block = b || '';\n  const candidate = cur ? (cur + LS + LS + block) : block;\n\n  if (candidate.length <= MAX) {\n    cur = candidate;\n    continue;\n  }\n\n  if (cur) pushCur();\n\n  if (block.length > MAX) {\n    const lines = block.split(LS);\n    let cur2 = '';\n    for (const line of lines) {\n      const cand2 = cur2 ? (cur2 + LS + line) : line;\n      if (cand2.length <= MAX) {\n        cur2 = cand2;\n      } else {\n        if (cur2) parts.push(cur2);\n        let rest = line;\n        while (rest.length > MAX) {\n          parts.push(rest.slice(0, MAX));\n          rest = rest.slice(MAX);\n        }\n        cur2 = rest;\n      }\n    }\n    if (cur2) parts.push(cur2);\n  } else {\n    cur = block;\n  }\n}\n\nif (cur) pushCur();\n\n// MarkdownV2 escape for notice line (only escape backticks by removing them)\nconst safeKey = (j.account_key || 'unknown').toString().replace(/`/g, '');\nconst notice = '*No\\u00A0topic\\u00A0mapping\\u00A0for:*' + LS + '`' + safeKey + '`' + LS + LS;\n\nreturn parts.map((p, idx) => ({\n  json: {\n    ...j,\n    telegram_part: p,\n    telegram_part_fallback: (idx === 0) ? (notice + p) : p,\n    part_index: idx,\n    part_count: parts.length\n  }\n}));"
+            },
+            "name": "Split Telegram (4096-safe)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3440,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{$json.thread_id}}",
+                            "operation": "isNotEmpty"
+                        }
+                    ]
+                }
+            },
+            "name": "Has Topic?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                3600,
+                220
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{'https://api.telegram.org/bot' + ($env.TELEGRAM_BOT_TOKEN || 'CHANGE_ME') + '/sendMessage'}}",
+                "responseFormat": "json",
+                "jsonParameters": true,
+                "sendBody": true,
+                "specifyBody": "keypair",
+                "options": {
+                    "timeout": 300000,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    }
+                },
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "chat_id",
+                            "value": "={{$json.forum_chat_id}}"
+                        },
+                        {
+                            "name": "message_thread_id",
+                            "value": "={{$json.thread_id}}"
+                        },
+                        {
+                            "name": "text",
+                            "value": "={{$json.telegram_part}}"
+                        },
+                        {
+                            "name": "parse_mode",
+                            "value": "MarkdownV2"
+                        },
+                        {
+                            "name": "disable_web_page_preview",
+                            "value": "={{true}}"
+                        }
+                    ]
+                }
+            },
+            "name": "Send Telegram (Topic)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                3840,
+                160
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{'https://api.telegram.org/bot' + ($env.TELEGRAM_BOT_TOKEN || 'CHANGE_ME') + '/sendMessage'}}",
+                "responseFormat": "json",
+                "jsonParameters": true,
+                "sendBody": true,
+                "specifyBody": "keypair",
+                "options": {
+                    "timeout": 300000,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    }
+                },
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "chat_id",
+                            "value": "={{$json.forum_chat_id}}"
+                        },
+                        {
+                            "name": "text",
+                            "value": "={{$json.telegram_part_fallback}}"
+                        },
+                        {
+                            "name": "parse_mode",
+                            "value": "MarkdownV2"
+                        },
+                        {
+                            "name": "disable_web_page_preview",
+                            "value": "={{true}}"
+                        }
+                    ]
+                }
+            },
+            "name": "Send Telegram (Fallback)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                3840,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Cron": {
+            "main": [
+                [
+                    {
+                        "node": "Call Crawler",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Crawler": {
+            "main": [
+                [
+                    {
+                        "node": "Flatten Posts",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Flatten Posts": {
+            "main": [
+                [
+                    {
+                        "node": "Clean Weibo Text",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Clean Weibo Text": {
+            "main": [
+                [
+                    {
+                        "node": "Translate CN→VI (Ollama)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Translate CN→VI (Ollama)": {
+            "main": [
+                [
+                    {
+                        "node": "Attach Translation",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Attach Translation": {
+            "main": [
+                [
+                    {
+                        "node": "Rewrite VI (Optional)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Rewrite VI (Optional)": {
+            "main": [
+                [
+                    {
+                        "node": "Attach Rewrite",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Attach Rewrite": {
+            "main": [
+                [
+                    {
+                        "node": "Decide VI Final",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Decide VI Final": {
+            "main": [
+                [
+                    {
+                        "node": "Append to Sheets (Service Account)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Append to Sheets (Service Account)": {
+            "main": [
+                [
+                    {
+                        "node": "Reattach Data After Sheets",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Reattach Data After Sheets": {
+            "main": [
+                [
+                    {
+                        "node": "Has VI?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has VI?": {
+            "main": [
+                [
+                    {
+                        "node": "Build Telegram (CN+VI)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Build Telegram (CN-only)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Telegram (CN+VI)": {
+            "main": [
+                [
+                    {
+                        "node": "Map Topic",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Telegram (CN-only)": {
+            "main": [
+                [
+                    {
+                        "node": "Map Topic",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Map Topic": {
+            "main": [
+                [
+                    {
+                        "node": "Split Telegram (4096-safe)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Telegram (4096-safe)": {
+            "main": [
+                [
+                    {
+                        "node": "Has Topic?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has Topic?": {
+            "main": [
+                [
+                    {
+                        "node": "Send Telegram (Topic)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Send Telegram (Fallback)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "versionId": "7",
+    "meta": {
+        "instanceId": "imported"
+    },
+    "id": "weibo-ollama-topics-sheets-service-account"
+}

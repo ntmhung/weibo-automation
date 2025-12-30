@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.cache
+
+# Ollama
+ollama/models/
+ollama/*.pub
+ollama/*_ed25519
+
+# n8n
+n8n/data/
+n8n/.n8n/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+secrets/
+
+# Sensitive JSON files (but keep workflow and config files)
+secrets/*.json
+weibo-crawler/data/*.json
+weibo-login-helper/weibo_auth.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log

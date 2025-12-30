@@ -1,0 +1,799 @@
+{
+    "name": "Weibo → (Clean) → Sheets (Monthly Update) → Telegram Topics (CN-only)",
+    "nodes": [
+        {
+            "parameters": {
+                "triggerTimes": {
+                    "item": [
+                        {
+                            "mode": "everyX",
+                            "value": 10,
+                            "unit": "minutes"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron",
+            "type": "n8n-nodes-base.cron",
+            "typeVersion": 1,
+            "position": [
+                -5328,
+                -928
+            ],
+            "id": "3fe3304e-014b-4160-b595-b7503ccca91c"
+        },
+        {
+            "parameters": {
+                "url": "={{'http://weibo:3001/scrape?token=' + ($env.SCRAPER_TOKEN || 'CHANGE_ME')}}",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Call Crawler",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -5088,
+                -928
+            ],
+            "id": "319207c8-d3f3-4de6-853c-275543149b40"
+        },
+        {
+            "parameters": {
+                "jsCode": "const inItems = $input.all().map(i => i.json);\n\n// Support BOTH shapes:\n// 1) One item with payload.items = [accounts...]\n// 2) Multiple items where each item IS an account\nlet accounts = [];\nfor (const it of inItems) {\n  if (it && Array.isArray(it.items)) accounts.push(...it.items);\n  else if (it) accounts.push(it);\n}\n\nconst out = [];\n\nfor (const acc of accounts) {\n  const account_key = acc.account_key || 'unknown';\n  const uid = acc.uid || '';\n  const fetched_at = acc.fetched_at || acc.generated_at || new Date().toISOString();\n\n  const posts = Array.isArray(acc.posts) ? acc.posts : [];\n  for (const p of posts) {\n    const post_id = (p.post_id || '').toString();\n    const created_at = p.created_at || fetched_at;\n    const permalink = p.permalink || p.scheme_url || '';\n    const text_cn = ((p.text_cn || p.text || '') + '').trim();\n\n    if (!text_cn) continue;\n\n    const fingerprint = post_id\n      ? account_key + '|' + post_id\n      : account_key + '|' + created_at + '|' + permalink;\n\n    out.push({\n      json: {\n        account_key,\n        uid,\n        fetched_at,\n        post_id,\n        created_at,\n        permalink,\n        text_cn,\n        fingerprint,\n        raw_json: JSON.stringify(p.raw || p)\n      }\n    });\n  }\n}\n\nreturn out;"
+            },
+            "name": "Flatten Posts",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4880,
+                -928
+            ],
+            "id": "2ddb5705-0e7e-4f5d-bac2-8d4526e18c49"
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "function normalizeWeiboText(s) {\n  s = (s || '').toString();\n  s = s.replace(/\\r\\n/g, '\\n');\n  s = s.replace(/[ \\t]+/g, ' ');\n  s = s.replace(/\\n{3,}/g, '\\n\\n');\n  return s.trim();\n}\n\nfunction escapeNewlinesForStorage(s) {\n  // For Sheets storage: convert real newlines into literal \\\\n\n  return (s || '').toString()\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n/g, '\\\\n');\n}\n\nconst base = ($json && typeof $json === 'object' && !Array.isArray($json))\n  ? $json\n  : { text_cn: String($json ?? '') };\n\nconst cleaned_cn_raw = normalizeWeiboText(base.text_cn);\nconst cleaned_cn_escaped = escapeNewlinesForStorage(cleaned_cn_raw);\n\nreturn {\n  ...base,\n  cleaned_cn_raw,\n  cleaned_cn_escaped\n};"
+            },
+            "name": "Clean Weibo Text",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4672,
+                -928
+            ],
+            "id": "0b74ba81-72d5-4514-819d-1def9ce22bff"
+        },
+        {
+            "parameters": {
+                "jsCode": "const items = $items('Clean Weibo Text').map(i => i.json);\nif (!items.length) return [{ json: { skip: true } }];\n\nconst ts = items[0].fetched_at || new Date().toISOString();\nconst d = new Date(ts);\nconst yyyy = d.getUTCFullYear();\nconst mm = String(d.getUTCMonth() + 1).padStart(2, '0');\nconst sheetName = `Weibo_${yyyy}-${mm}`;\n\nreturn [{ json: { skip: false, sheetName } }];"
+            },
+            "name": "Compute Month Sheet",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4496,
+                -1104
+            ],
+            "id": "484f8f0b-b9d8-4d5d-8ec7-a7a98cdbb1a4"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{$json.skip}}",
+                            "operation": "isFalse"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "Has Any Posts?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -4320,
+                -1104
+            ],
+            "id": "5fb7370b-ea47-466f-be38-a17f10d5d6fb"
+        },
+        {
+            "parameters": {
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac?fields=sheets(properties(title))' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Get Spreadsheet Tabs",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -4144,
+                -1104
+            ],
+            "id": "9931ad9c-e54c-464c-b6e9-398fa4e7e943",
+            "credentials": {
+                "googleApi": {
+                    "id": "h1IwnXltVer9B4ov",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const sheetName = $items('Compute Month Sheet')[0].json.sheetName;\nconst meta = $items('Get Spreadsheet Tabs')[0].json;\nconst titles = (meta.sheets || []).map(s => s.properties?.title).filter(Boolean);\n\nconst exists = titles.includes(sheetName);\n\n// Columns:\n// A created_at\n// B account_key\n// C post_id\n// D permalink\n// E text_cn\n// F translation_vi (formula)\n// G reserved\n// H fingerprint\n// I fetched_at\nconst header = [[\n  'created_at',\n  'account_key',\n  'post_id',\n  'permalink',\n  'text_cn',\n  'translation_vi',\n  'reserved',\n  'fingerprint',\n  'fetched_at'\n]];\n\nreturn [{ json: { sheetName, sheetExists: exists, header } }];"
+            },
+            "name": "Ensure Month Sheet Exists",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -3968,
+                -1104
+            ],
+            "id": "0a78a274-decc-43a6-9588-df195a584144"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{$json.sheetExists}}",
+                            "operation": "isFalse"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "Sheet Missing?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -3776,
+                -1104
+            ],
+            "id": "554bfc1c-bba5-408d-83da-b9d63b839e8a"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac:batchUpdate' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "jsonParameters": true,
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "requests",
+                            "value": [
+                                {
+                                    "addSheet": {
+                                        "properties": {
+                                            "title": "={{$json.sheetName}}"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Create Month Sheet",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -3600,
+                -1200
+            ],
+            "id": "d0d5cc70-3c68-4f8c-9c4f-8d4c2a3a1a55",
+            "credentials": {
+                "googleApi": {
+                    "id": "h1IwnXltVer9B4ov",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "method": "PUT",
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac/values/' + encodeURIComponent($items('Ensure Month Sheet Exists')[0].json.sheetName + '!A1:I1') + '?valueInputOption=RAW' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "values",
+                            "value": "={{ $items('Ensure Month Sheet Exists')[0].json.header }}"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Write Header Row",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -3424,
+                -1200
+            ],
+            "id": "49c69e3c-79db-49d2-8a93-6e918f7c7aaf",
+            "credentials": {
+                "googleApi": {
+                    "id": "h1IwnXltVer9B4ov",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac/values/' + encodeURIComponent($items('Ensure Month Sheet Exists')[0].json.sheetName + '!A1:A') }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Get Column A Used Rows (Monthly)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -3200,
+                -1088
+            ],
+            "id": "25970630-1ec4-4314-94fb-1eeb1e372bd1",
+            "credentials": {
+                "googleApi": {
+                    "id": "h1IwnXltVer9B4ov",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const sheetName = $items('Ensure Month Sheet Exists')[0].json.sheetName;\nconst colA = $items('Get Column A Used Rows (Monthly)')[0].json.values || [];\n\n// Row 1 is header => data starts at row 2\nconst dataCount = Math.max(0, colA.length - 1);\nconst nextRow = 2 + dataCount;\n\nconst items = $items('Clean Weibo Text').map(i => i.json);\nif (!items.length) return [{ json: { skip: true } }];\n\n// Build rows with 9 columns (A..I)\n// translation_vi is column F, formula references column E of the SAME row.\nconst rows = items.map((p, idx) => {\n  const rowNum = nextRow + idx;\n  const formula = `=GOOGLETRANSLATE(E${rowNum},\"zh\",\"vi\")`;\n\n  return [\n    p.created_at || '',\n    p.account_key || '',\n    p.post_id || '',\n    p.permalink || '',\n    p.cleaned_cn_escaped || '',\n    formula,\n    '',\n    p.fingerprint || '',\n    p.fetched_at || ''\n  ];\n});\n\nconst start = nextRow;\nconst end = nextRow + rows.length - 1;\nconst range = `${sheetName}!A${start}:I${end}`;\n\nreturn [{ json: { skip: false, range, values: rows } }];"
+            },
+            "name": "Build Monthly Update Payload",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -3024,
+                -1088
+            ],
+            "id": "3508f9ae-5cad-495a-93ca-a318208b1324"
+        },
+        {
+            "parameters": {
+                "method": "PUT",
+                "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac/values/' + encodeURIComponent($json.range) + '?valueInputOption=USER_ENTERED' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "values",
+                            "value": "={{$json.values}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Update Sheets (Monthly)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -2848,
+                -1088
+            ],
+            "id": "254cef08-a11c-4d71-85c8-30313f0a0218",
+            "notesInFlow": true,
+            "credentials": {
+                "googleApi": {
+                    "id": "h1IwnXltVer9B4ov",
+                    "name": "Google Service Account account"
+                }
+            },
+            "notes": "Writes all posts from this run into Weibo_YYYY-MM at the first empty row (row 1 is header). Uses USER_ENTERED so GOOGLETRANSLATE formulas evaluate."
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const j = $json;\n\nconst LS = \"\\u2028\";\n\nfunction escMdV2(s) {\n  s = (s ?? \"\").toString();\n  // Telegram MarkdownV2 reserved chars: _ * [ ] ( ) ~ ` > # + - = | { } . ! and backslash\n  // Put \"-\" at the end (or escape it) to avoid range parsing in the character class.\n  return s.replace(/([_*\\$begin:math:display$\\$end:math:display$()~`>#+=|{}.!\\\\-])/g, \"\\\\$1\");\n}\n\nfunction toTelegramLines(s) {\n  return (s ?? \"\").toString()\n    .replace(/\\\\r\\\\n/g, \"\\\\n\")\n    .replace(/\\\\r/g, \"\\\\n\")\n    .split(\"\\\\n\")\n    .join(LS);\n}\n\nfunction clip(s, maxLen) {\n  s = (s ?? \"\").toString();\n  if (s.length <= maxLen) return s;\n  return s.slice(0, Math.max(0, maxLen - 1)) + \"…\";\n}\n\nconst ACCOUNT_STYLE = {\n  f2lam: { title: \"F2 Lam\", emoji: \"🟣\" },\n  f2ma:  { title: \"F2 Ma\",  emoji: \"🔵\" },\n};\n\nconst style = ACCOUNT_STYLE[j.account_key] || { title: j.account_key || \"unknown\", emoji: \"🧵\" };\n\nconst cn = clip(j.cleaned_cn_raw || j.text_cn || \"\", 2600);\n\nconst header  = \"*\" + escMdV2(style.emoji) + \"\\\\u00A0\" + escMdV2(style.title) + \"*\";\nconst cnBlock  = \"*🇨🇳\\\\u00A0Original\\\\u00A0CN:*\" + LS + escMdV2(toTelegramLines(cn));\nconst linkLine = \"*🔗\\\\u00A0Link:*\" + LS + escMdV2(toTelegramLines(j.permalink || \"\"));\n\nconst msg = [header, cnBlock, linkLine].join(LS + LS);\n\nreturn {\n  ...j,\n  telegram_message: msg,\n};"
+            },
+            "name": "Build Telegram (CN-only)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4496,
+                -672
+            ],
+            "id": "287f31bf-6893-4966-9ef0-6bec417443a4"
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const FORUM_CHAT_ID = Number($env.TG_FORUM_CHAT_ID);\n\nconst THREAD_MAP = {\n  f2lam: 2,\n  f2ma: 3,\n  f2dinh: 84,\n  f2hien: 85,\n  f2van: 86,\n  f2nguyen: 87,\n  f2tuong: 88,\n  f2doan: 89,\n  f3chu: 79,\n  f3to: 80,\n  f3cuc: 81,\n  f3vu: 82,\n  f3hang: 83\n};\n\nconst thread_id = THREAD_MAP[$json.account_key] || null;\n\nreturn { ...$json, forum_chat_id: FORUM_CHAT_ID, thread_id };"
+            },
+            "name": "Map Topic",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4304,
+                -672
+            ],
+            "id": "7eaa34bd-f847-4dd8-a5e6-9884cae4a14b"
+        },
+        {
+            "parameters": {
+                "jsCode": "const MAX = 3900; // keep margin under 4096\nconst LS = \"\\u2028\";\n\nfunction splitOne(j) {\n  const text = (j.telegram_message || \"\").toString();\n  const blocks = text.split(LS + LS);\n\n  const parts = [];\n  let cur = \"\";\n\n  function pushCur() {\n    if (cur) parts.push(cur);\n    cur = \"\";\n  }\n\n  for (const b of blocks) {\n    const block = b || \"\";\n    const candidate = cur ? (cur + LS + LS + block) : block;\n\n    if (candidate.length <= MAX) {\n      cur = candidate;\n      continue;\n    }\n\n    if (cur) pushCur();\n\n    if (block.length > MAX) {\n      const lines = block.split(LS);\n      let cur2 = \"\";\n\n      for (const line of lines) {\n        const cand2 = cur2 ? (cur2 + LS + line) : line;\n        if (cand2.length <= MAX) {\n          cur2 = cand2;\n        } else {\n          if (cur2) parts.push(cur2);\n          let rest = line;\n          while (rest.length > MAX) {\n            parts.push(rest.slice(0, MAX));\n            rest = rest.slice(MAX);\n          }\n          cur2 = rest;\n        }\n      }\n\n      if (cur2) parts.push(cur2);\n    } else {\n      cur = block;\n    }\n  }\n\n  if (cur) pushCur();\n\n  const safeKey = (j.account_key || \"unknown\").toString().replace(/`/g, \"\");\n  const notice = \"*No\\u00A0topic\\u00A0mapping\\u00A0for:*\" + LS + \"`\" + safeKey + \"`\" + LS + LS;\n\n  return parts.map((p, idx) => ({\n    json: {\n      ...j,\n      telegram_part: p,\n      telegram_part_fallback: (idx === 0) ? (notice + p) : p,\n      part_index: idx,\n      part_count: parts.length\n    }\n  }));\n}\n\nconst inputItems = $input.all().map(i => i.json);\nconst out = [];\n\nfor (const j of inputItems) {\n  out.push(...splitOne(j));\n}\n\nreturn out;"
+            },
+            "name": "Split Telegram (4096-safe)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -4112,
+                -672
+            ],
+            "id": "18b0b249-7a1e-4c53-af89-12c215325f0f"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{$json.thread_id}}",
+                            "operation": "isNotEmpty"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "Has Topic?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -3952,
+                -672
+            ],
+            "id": "e3fb195e-783c-40d0-8658-856697800622"
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "Split in Batches (Topic)",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 1,
+            "position": [
+                -3632,
+                -752
+            ],
+            "id": "36c66c2f-498b-4bcd-b30a-6a512c0b9d5b"
+        },
+        {
+            "parameters": {
+                "amount": 6,
+                "unit": "seconds"
+            },
+            "name": "Wait (Topic) 6s",
+            "type": "n8n-nodes-base.wait",
+            "typeVersion": 1,
+            "position": [
+                -3472,
+                -752
+            ],
+            "id": "07107e36-6a1d-4dd7-abbd-6103291ab22b",
+            "webhookId": "d8e923b9-b8bd-4ecf-aaa1-fd1ce79833fe"
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "Split in Batches (Fallback)",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 1,
+            "position": [
+                -3632,
+                -560
+            ],
+            "id": "274a4183-108b-4081-8a4e-98d51a765ae7"
+        },
+        {
+            "parameters": {
+                "amount": 6,
+                "unit": "seconds"
+            },
+            "name": "Wait (Fallback) 6s",
+            "type": "n8n-nodes-base.wait",
+            "typeVersion": 1,
+            "position": [
+                -3472,
+                -560
+            ],
+            "id": "1070e997-8634-45f3-aca0-2c8c0a7da51f",
+            "webhookId": "1cfde8f1-cf13-4756-b7e8-9b70ee16502f"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{'https://api.telegram.org/bot' + ($env.TELEGRAM_BOT_TOKEN || 'CHANGE_ME') + '/sendMessage'}}",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "chat_id",
+                            "value": "={{$json.forum_chat_id}}"
+                        },
+                        {
+                            "name": "message_thread_id",
+                            "value": "={{$json.thread_id}}"
+                        },
+                        {
+                            "name": "text",
+                            "value": "={{$json.telegram_part}}"
+                        },
+                        {
+                            "name": "parse_mode",
+                            "value": "MarkdownV2"
+                        },
+                        {
+                            "name": "disable_web_page_preview",
+                            "value": "={{true}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Send Telegram (Topic)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -3312,
+                -752
+            ],
+            "id": "f4d2fe66-8402-4303-a44c-fc9129af42c0",
+            "continueOnFail": true
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{'https://api.telegram.org/bot' + ($env.TELEGRAM_BOT_TOKEN || 'CHANGE_ME') + '/sendMessage'}}",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "chat_id",
+                            "value": "={{$json.forum_chat_id}}"
+                        },
+                        {
+                            "name": "text",
+                            "value": "={{$json.telegram_part_fallback}}"
+                        },
+                        {
+                            "name": "parse_mode",
+                            "value": "MarkdownV2"
+                        },
+                        {
+                            "name": "disable_web_page_preview",
+                            "value": "={{true}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "name": "Send Telegram (Fallback)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -3312,
+                -560
+            ],
+            "id": "19a26030-4c04-4974-9599-6997dc0cdea5",
+            "continueOnFail": true
+        }
+    ],
+    "pinData": {},
+    "connections": {
+        "Cron": {
+            "main": [
+                [
+                    {
+                        "node": "Call Crawler",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Crawler": {
+            "main": [
+                [
+                    {
+                        "node": "Flatten Posts",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Flatten Posts": {
+            "main": [
+                [
+                    {
+                        "node": "Clean Weibo Text",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Clean Weibo Text": {
+            "main": [
+                [
+                    {
+                        "node": "Compute Month Sheet",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Build Telegram (CN-only)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Compute Month Sheet": {
+            "main": [
+                [
+                    {
+                        "node": "Has Any Posts?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has Any Posts?": {
+            "main": [
+                [
+                    {
+                        "node": "Get Spreadsheet Tabs",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Spreadsheet Tabs": {
+            "main": [
+                [
+                    {
+                        "node": "Ensure Month Sheet Exists",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Ensure Month Sheet Exists": {
+            "main": [
+                [
+                    {
+                        "node": "Sheet Missing?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Sheet Missing?": {
+            "main": [
+                [
+                    {
+                        "node": "Create Month Sheet",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Get Column A Used Rows (Monthly)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Month Sheet": {
+            "main": [
+                [
+                    {
+                        "node": "Write Header Row",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Write Header Row": {
+            "main": [
+                [
+                    {
+                        "node": "Get Column A Used Rows (Monthly)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Column A Used Rows (Monthly)": {
+            "main": [
+                [
+                    {
+                        "node": "Build Monthly Update Payload",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Monthly Update Payload": {
+            "main": [
+                [
+                    {
+                        "node": "Update Sheets (Monthly)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Telegram (CN-only)": {
+            "main": [
+                [
+                    {
+                        "node": "Map Topic",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Map Topic": {
+            "main": [
+                [
+                    {
+                        "node": "Split Telegram (4096-safe)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Telegram (4096-safe)": {
+            "main": [
+                [
+                    {
+                        "node": "Has Topic?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has Topic?": {
+            "main": [
+                [
+                    {
+                        "node": "Split in Batches (Topic)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Split in Batches (Fallback)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split in Batches (Topic)": {
+            "main": [
+                [
+                    {
+                        "node": "Wait (Topic) 6s",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Wait (Topic) 6s": {
+            "main": [
+                [
+                    {
+                        "node": "Send Telegram (Topic)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Telegram (Topic)": {
+            "main": [
+                [
+                    {
+                        "node": "Split in Batches (Topic)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split in Batches (Fallback)": {
+            "main": [
+                [
+                    {
+                        "node": "Wait (Fallback) 6s",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Wait (Fallback) 6s": {
+            "main": [
+                [
+                    {
+                        "node": "Send Telegram (Fallback)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Telegram (Fallback)": {
+            "main": [
+                [
+                    {
+                        "node": "Split in Batches (Fallback)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "versionId": "e5f0d9ee-7555-4d48-926f-a7123b87c390",
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "f78cfb6244314ee8ff9426527a18062171bd4772234b76e6ea0a518cbe7443f9"
+    },
+    "id": "MWHBqkFp9yb9gb4u",
+    "tags": []
+}
