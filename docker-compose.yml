@@ -7,7 +7,7 @@ services:
       - WEIBO_SLEEP_REQUEST=${WEIBO_SLEEP_REQUEST}
       - WEIBO_SLEEP_ACCOUNT=${WEIBO_SLEEP_ACCOUNT}
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./weibo-crawler/data:/data
     restart: unless-stopped
@@ -16,7 +16,7 @@ services:
     image: ollama/ollama:latest
     container_name: ollama-qwen
     ports:
-      - "12434:12434"
+      - "127.0.0.1:12434:11434" # host 12434 -> container 11434
     volumes:
       - ./ollama:/root/.ollama
     restart: unless-stopped
@@ -25,7 +25,7 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
       - TZ=Asia/Ho_Chi_Minh
       - NODE_ENV=production
@@ -34,13 +34,11 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASS}
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      # used by workflow
       - SCRAPER_TOKEN=${SCRAPE_TOKEN}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TG_FORUM_CHAT_ID=${TG_FORUM_CHAT_ID}
       - OLLAMA_URL=http://ollama:11434/api/generate
       - OLLAMA_MODEL=${OLLAMA_MODEL}
-
     volumes:
       - ./n8n/data:/home/node/.n8n
     restart: unless-stopped
