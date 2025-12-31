@@ -43,11 +43,10 @@ services:
 
       # 🔹 REQUIRED for subpath behind Nginx
       - N8N_PATH=/n8n/
-      - N8N_HOST=161.97.148.24
-      - N8N_PROTOCOL=http
-      - WEBHOOK_URL=http://161.97.148.24/n8n/
-      - N8N_EDITOR_BASE_URL=http://161.97.148.24/n8n/
-
+      - N8N_PROTOCOL=https
+      - N8N_HOST=n8n.161.97.148.24.nip.io
+      - WEBHOOK_URL=https://n8n.161.97.148.24.nip.io/
+      - N8N_EDITOR_BASE_URL=https://n8n.161.97.148.24.nip.io/
       # used by workflows
       - SCRAPER_TOKEN=${SCRAPE_TOKEN}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
