@@ -7,8 +7,7 @@
                     "item": [
                         {
                             "mode": "everyX",
-                            "value": 10,
-                            "unit": "minutes"
+                            "value": 12
                         }
                     ]
                 }
@@ -17,14 +16,14 @@
             "type": "n8n-nodes-base.cron",
             "typeVersion": 1,
             "position": [
-                -5328,
-                -928
+                -1728,
+                272
             ],
-            "id": "3fe3304e-014b-4160-b595-b7503ccca91c"
+            "id": "83ba865f-f168-4d00-9889-a8e53c131830"
         },
         {
             "parameters": {
-                "url": "={{'http://weibo:3001/scrape?token=' + ($env.SCRAPER_TOKEN || 'CHANGE_ME')}}",
+                "url": "={{'https://weibo.161.97.148.24.nip.io/scrape?token=' + ($env.SCRAPER_TOKEN || 'CHANGE_ME')}}",
                 "options": {
                     "timeout": 300000
                 }
@@ -33,10 +32,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -5088,
-                -928
+                -1488,
+                272
             ],
-            "id": "319207c8-d3f3-4de6-853c-275543149b40"
+            "id": "2f9102b0-3076-4ce7-b2c1-abe1f6a21e30"
         },
         {
             "parameters": {
@@ -46,10 +45,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4880,
-                -928
+                -1280,
+                272
             ],
-            "id": "2ddb5705-0e7e-4f5d-bac2-8d4526e18c49"
+            "id": "69ed6f90-552a-4316-9566-f5adc70b8bf1"
         },
         {
             "parameters": {
@@ -60,10 +59,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4672,
-                -928
+                -1072,
+                272
             ],
-            "id": "0b74ba81-72d5-4514-819d-1def9ce22bff"
+            "id": "0d51c8e3-9de3-4b3c-b1b9-589616a8dff3"
         },
         {
             "parameters": {
@@ -73,10 +72,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4496,
-                -1104
+                -896,
+                96
             ],
-            "id": "484f8f0b-b9d8-4d5d-8ec7-a7a98cdbb1a4"
+            "id": "4146944f-70da-4eca-93e2-acf84d435617"
         },
         {
             "parameters": {
@@ -94,10 +93,10 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                -4320,
-                -1104
+                -720,
+                96
             ],
-            "id": "5fb7370b-ea47-466f-be38-a17f10d5d6fb"
+            "id": "b8822075-0962-4e5e-9bc8-fbceb95677b6"
         },
         {
             "parameters": {
@@ -112,13 +111,13 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -4144,
-                -1104
+                -544,
+                96
             ],
-            "id": "9931ad9c-e54c-464c-b6e9-398fa4e7e943",
+            "id": "77d0ec01-e2c7-4101-ba8b-cbcbd29196c7",
             "credentials": {
                 "googleApi": {
-                    "id": "h1IwnXltVer9B4ov",
+                    "id": "8J3FxwZXRI88u4AA",
                     "name": "Google Service Account account"
                 }
             }
@@ -131,10 +130,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -3968,
-                -1104
+                -368,
+                96
             ],
-            "id": "0a78a274-decc-43a6-9588-df195a584144"
+            "id": "5a89e2aa-7468-4cd1-a6bb-c2e04b24d255"
         },
         {
             "parameters": {
@@ -152,10 +151,10 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                -3776,
-                -1104
+                -176,
+                96
             ],
-            "id": "554bfc1c-bba5-408d-83da-b9d63b839e8a"
+            "id": "627cadc4-65b3-4ebd-9bf3-9afd3ffb6861"
         },
         {
             "parameters": {
@@ -163,7 +162,6 @@
                 "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/1M0vC1XDLFjADOR3W_Yx1H4cqIlGKCvGP2_3SKhycYac:batchUpdate' }}",
                 "authentication": "predefinedCredentialType",
                 "nodeCredentialType": "googleApi",
-                "jsonParameters": true,
                 "sendBody": true,
                 "bodyParameters": {
                     "parameters": [
@@ -189,13 +187,13 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -3600,
-                -1200
+                0,
+                0
             ],
-            "id": "d0d5cc70-3c68-4f8c-9c4f-8d4c2a3a1a55",
+            "id": "e51bafaa-6c96-4095-89ef-fce3b3f407fb",
             "credentials": {
                 "googleApi": {
-                    "id": "h1IwnXltVer9B4ov",
+                    "id": "8J3FxwZXRI88u4AA",
                     "name": "Google Service Account account"
                 }
             }
@@ -223,13 +221,13 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -3424,
-                -1200
+                176,
+                0
             ],
-            "id": "49c69e3c-79db-49d2-8a93-6e918f7c7aaf",
+            "id": "ee081786-d5c3-43fb-a35b-19d41cf16ece",
             "credentials": {
                 "googleApi": {
-                    "id": "h1IwnXltVer9B4ov",
+                    "id": "8J3FxwZXRI88u4AA",
                     "name": "Google Service Account account"
                 }
             }
@@ -247,13 +245,13 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -3200,
-                -1088
+                400,
+                112
             ],
-            "id": "25970630-1ec4-4314-94fb-1eeb1e372bd1",
+            "id": "bd9c14c1-02fc-4c74-88c7-16bbb0f770dc",
             "credentials": {
                 "googleApi": {
-                    "id": "h1IwnXltVer9B4ov",
+                    "id": "8J3FxwZXRI88u4AA",
                     "name": "Google Service Account account"
                 }
             }
@@ -266,10 +264,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -3024,
-                -1088
+                608,
+                112
             ],
-            "id": "3508f9ae-5cad-495a-93ca-a318208b1324"
+            "id": "c3bbe339-3332-4136-8032-721d14948112"
         },
         {
             "parameters": {
@@ -294,14 +292,14 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -2848,
-                -1088
+                816,
+                112
             ],
-            "id": "254cef08-a11c-4d71-85c8-30313f0a0218",
+            "id": "fd90d551-2308-4368-ba02-c35b77b0f91a",
             "notesInFlow": true,
             "credentials": {
                 "googleApi": {
-                    "id": "h1IwnXltVer9B4ov",
+                    "id": "8J3FxwZXRI88u4AA",
                     "name": "Google Service Account account"
                 }
             },
@@ -316,10 +314,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4496,
-                -672
+                -896,
+                528
             ],
-            "id": "287f31bf-6893-4966-9ef0-6bec417443a4"
+            "id": "67f3eb6f-30b3-43b1-bb56-2824a1aaeb6e"
         },
         {
             "parameters": {
@@ -330,10 +328,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4304,
-                -672
+                -704,
+                528
             ],
-            "id": "7eaa34bd-f847-4dd8-a5e6-9884cae4a14b"
+            "id": "890166ea-a301-4553-afe9-35df75acec04"
         },
         {
             "parameters": {
@@ -343,10 +341,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -4112,
-                -672
+                -512,
+                528
             ],
-            "id": "18b0b249-7a1e-4c53-af89-12c215325f0f"
+            "id": "3da73860-0aeb-452d-929d-f1890c021fa9"
         },
         {
             "parameters": {
@@ -364,10 +362,10 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                -3952,
-                -672
+                -352,
+                528
             ],
-            "id": "e3fb195e-783c-40d0-8658-856697800622"
+            "id": "5573d0d1-3d0f-42c4-816f-6f61b4bb2794"
         },
         {
             "parameters": {
@@ -378,10 +376,10 @@
             "type": "n8n-nodes-base.splitInBatches",
             "typeVersion": 1,
             "position": [
-                -3632,
-                -752
+                -32,
+                448
             ],
-            "id": "36c66c2f-498b-4bcd-b30a-6a512c0b9d5b"
+            "id": "bd9504c3-2d52-46ee-98fb-3d00982af41d"
         },
         {
             "parameters": {
@@ -392,10 +390,10 @@
             "type": "n8n-nodes-base.wait",
             "typeVersion": 1,
             "position": [
-                -3472,
-                -752
+                128,
+                448
             ],
-            "id": "07107e36-6a1d-4dd7-abbd-6103291ab22b",
+            "id": "ea7d9d59-185a-452a-afb5-a5d96328dcaa",
             "webhookId": "d8e923b9-b8bd-4ecf-aaa1-fd1ce79833fe"
         },
         {
@@ -407,10 +405,10 @@
             "type": "n8n-nodes-base.splitInBatches",
             "typeVersion": 1,
             "position": [
-                -3632,
-                -560
+                -32,
+                640
             ],
-            "id": "274a4183-108b-4081-8a4e-98d51a765ae7"
+            "id": "cadd57e5-3aeb-4f11-b5d6-6af0be874bf5"
         },
         {
             "parameters": {
@@ -421,10 +419,10 @@
             "type": "n8n-nodes-base.wait",
             "typeVersion": 1,
             "position": [
-                -3472,
-                -560
+                128,
+                640
             ],
-            "id": "1070e997-8634-45f3-aca0-2c8c0a7da51f",
+            "id": "0ccc9dfa-8bce-479e-9505-43585aa9f2d2",
             "webhookId": "1cfde8f1-cf13-4756-b7e8-9b70ee16502f"
         },
         {
@@ -464,10 +462,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -3312,
-                -752
+                288,
+                448
             ],
-            "id": "f4d2fe66-8402-4303-a44c-fc9129af42c0",
+            "id": "dd323407-7d51-4138-b1bc-7af61113c9dd",
             "continueOnFail": true
         },
         {
@@ -503,10 +501,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -3312,
-                -560
+                288,
+                640
             ],
-            "id": "19a26030-4c04-4974-9599-6997dc0cdea5",
+            "id": "a37d2f25-997e-450a-9123-800460cacc9e",
             "continueOnFail": true
         }
     ],
@@ -787,13 +785,13 @@
     },
     "active": false,
     "settings": {
-        "executionOrder": "v1"
+        "executionOrder": "v1",
+        "availableInMCP": false
     },
-    "versionId": "e5f0d9ee-7555-4d48-926f-a7123b87c390",
+    "versionId": "3dd5b198-38fe-4658-af0e-ff621d8abc79",
     "meta": {
-        "templateCredsSetupCompleted": true,
-        "instanceId": "f78cfb6244314ee8ff9426527a18062171bd4772234b76e6ea0a518cbe7443f9"
+        "instanceId": "bf0c4b80b1e83c145a3cefdd150498f3a0ad90d8d6757ed7567fb6ef869df800"
     },
-    "id": "MWHBqkFp9yb9gb4u",
+    "id": "1U6Mflw6bzLvkPYy",
     "tags": []
 }
